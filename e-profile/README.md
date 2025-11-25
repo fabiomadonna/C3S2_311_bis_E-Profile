@@ -252,11 +252,10 @@ For each period (hourly/daily/monthly/yearly) and station:
 
 ### Current Limitations
 
-1. **Database Dependency**
-   - Description: The system is tightly coupled with PostgreSQL.
-   - Workaround: None currently.
+9.1 **Database Dependency**
+    - None currently.
 
-2. **Memory Usage**
+9.2 **Memory Usage**
    - Description: Parallel processing of large NetCDF files can consume significant RAM.
    - Workaround: Adjust the number of parallel workers if memory is constrained.
 
