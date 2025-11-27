@@ -280,15 +280,18 @@ Figure 3: Daily Average Wind Direction Before vs. After QC – Station WMO 010
 
 
 7.9 ADDITIONAL RECOMMENDATIONS
-- 
 
 ---
 ## 8. Automatic Tests
+
 ---
 
 ## 9. Known Limitations
 
+___
+
 ### Current Limitations
+The script in not made yet to download only the fraction of data added to the latest version, but it downloads all the data available in the CEDA archive
 
 9.1 **Database Dependency**
     - None currently.
@@ -298,8 +301,6 @@ Figure 3: Daily Average Wind Direction Before vs. After QC – Station WMO 010
    - Workaround: Adjust the number of parallel workers if memory is constrained.
 
 ### Known Issues
-
-See the issue tracker for a complete list of known bugs.
 
 ---
 
@@ -334,20 +335,15 @@ Contributions are welcome. Please ensure tests pass before submitting changes.
 
 ## 12. Deliverable Compliance
 
-- [x] Software placed in public repository
+- [ ] Software placed in public repository
 - [x] Complete source code included
 - [x] Documentation included in repository
 - [x] Installation instructions provided
-- [x] Installation does not require administrator privileges
-- [x] Automatic tests included and verified
 - [x] Snapshot of test output provided
 - [x] License specified
 - [x] Software includes version number/release tag
-- [x] Code follows ECMWF coding standards (if applicable)
 - [x] README.md with quick start instructions
 - [x] Example datasets or data access instructions provided
-- [x] Citation information provided (if applicable)
-- [x] Technical specifications documented
 
 ---
 
