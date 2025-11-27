@@ -1,4 +1,38 @@
 #!/bin/bash
+###############################################################################
+# Project:  E-PROFILE Automated Downloader
+# File:     eprofile.sh
+# Author:   Emanuele Tramutola
+# Version:  1.0.0
+# Date:     2025-01-01
+#
+# Description:
+#   This script automates:
+#     - Retrieval of CEDA trust roots via online_ca_client
+#     - Automatic certificate generation for secure CEDA downloads
+#     - Authenticated recursive download of wind profiler data from CEDA DAP
+#
+# Features:
+#   - Checks and creates required directories
+#   - Validates path transitions with error handling
+#   - Automatically clones the online_ca_client repo if missing
+#   - Produces a `creds.pem` certificate for wget authentication
+#   - Downloads data recursively while preserving directory structure
+#
+# Requirements:
+#   - bash >= 4
+#   - git
+#   - wget with SSL support
+#   - Dependencies required by online_ca_client (openssl, python)
+#
+# Usage:
+#   1. Edit the path variables in the configuration block
+#   2. Run:  bash download_eprofile_data.sh
+#
+# Disclaimer:
+#   Provided "as is". Validate permissions before running on production systems.
+#
+###############################################################################
 
 # -------------------------------
 # Set your paths here
