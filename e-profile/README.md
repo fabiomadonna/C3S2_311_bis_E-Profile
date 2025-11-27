@@ -1,9 +1,9 @@
 # ECMWF Software with Documentation (SD) Deliverable
 
 **Project / Activity Name:** E-PROFILE Wind Profilers' Data Processing System
-**Version:** 1.0.0
-**Date:** 2025-11-24
-**Author(s):** Faezeh Karimian Saracks, Fabio Madonna, Emanuele Tramutola
+- Version:1.0.0
+-Date: 2025-11-24
+-Author(s): Faezeh Karimian Saracks, Fabio Madonna, Emanuele Tramutola
 
 ---
 
@@ -199,6 +199,8 @@ response = requests.post(token_url,
 
 token = response.json()["access_token"]
 print(token)
+
+---
 
 **Process data with R script**
 source("eprofile.R")
