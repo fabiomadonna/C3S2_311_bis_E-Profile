@@ -1,6 +1,6 @@
 ###############################################################################
 # Project: E-PROFILE Wind Profiler Data Processing script
-# File:    e-profile.R
+# File:    eprofile.R
 # Author:  Faezeh Karimian Saracks, Fabio Madonna.
 # Version: 1.0.0
 # Date:    2025-01-01
