@@ -1,3 +1,51 @@
+###############################################################################
+# Project: E-PROFILE Wind Profiler Processing Pipeline
+# File:    main_processing_script.R
+# Author:  Faezeh Karimian Saracks, Fabio Madonna.
+# Version: 1.0.0
+# Date:    2025-01-01
+#
+# Description:
+#   This script implements a full end-to-end data processing pipeline for
+#   E-PROFILE wind profiler data. It includes:
+#
+#     1. Metadata extraction from raw CSV files
+#     2. Parallel file parsing and quality-controlled data extraction
+#     3. Cleaning and computation of derived wind variables
+#     4. Stepwise filtering with detailed logging
+#     5. Multi-resolution temporal aggregation (hourly → daily → monthly → yearly)
+#     6. Integration of static metadata from external spreadsheets
+#     7. NetCDF export using CF-1.8 compliant structure
+#     8. Runtime measurement and I/O handling
+#
+# Key Features:
+#   - Fully parallelized sections for high-volume datasets
+#   - Robust error handling in file processing
+#   - Yamartino wind direction standard deviation
+#   - Automated wind-energy metrics (WPD, turbulence, stress)
+#   - Compatibility with wind turbine operational ranges
+#   - Generation of station-level NetCDF files for each temporal resolution
+#
+# Requirements:
+#   R >= 4.2.0
+#   Packages: readr, dplyr, parallel, lubridate, foreach, doParallel,
+#             fasttime, data.table, readxl, magrittr, ncdf4, zoo, writexl
+#
+# Usage:
+#   - Set working directory and user paths in the section below.
+#   - Place raw CSV files inside the input folder (data_dir).
+#   - Run the script from start to end for a complete pipeline execution.
+#
+# Notes:
+#   - All time variables are normalized to UTC.
+#   - NetCDF time units follow CF conventions and vary by aggregation level.
+#   - Output files include filtering logs, combined datasets, and NetCDF products.
+#
+# Disclaimer:
+#   This script is provided "as is". Adapt it as needed for your workflow.
+#
+###############################################################################
+
 # Set your working directory here
 setwd("E-PROFILE")  # <-- set your path
 
