@@ -53,7 +53,6 @@ E-PROFILE/
 │ └── FinalCheck_datevalid_distinct_merged_metadata.xlsx # Station metadata for processing
 ├── logs/ # Processing and filtering logs
 ├── output/ # Aggregated CSVs and NetCDF files
-├── scripts/ # Optional additional helper scripts
 └── external/ # External repositories (e.g., online_ca_client) or certificates
 
 This repository contains the scripts and input files needed to download, process, and aggregate E-PROFILE wind profiler data. The structure is as follows.
@@ -172,6 +171,7 @@ Check output/ for generated CSV and NetCDF files. Logs in logs/ can be used to v
 ---
 
 **7. WORKFLOW SCHEME (TEXT VERSION) AND DETAILED EXPLANATION OF MAIN SCRIPT SECTIONS**
+<img width="1008" height="482" alt="Screenshot 2025-11-27 alle 12 56 37" src="https://github.com/user-attachments/assets/836bb73a-c869-48f3-9fda-dde555143ec8" />
 
 RAW CSV FILES
 ¯ Metadata extraction (parallel)
@@ -203,9 +203,8 @@ produces a metadata summary table grouped by station.
 Each file is scanned to identify “data” blocks. Within each block:
 - station and date_valid fields are extracted
 - the block is parsed via data.table::fread
-- variables X1, X4, X6, X7 are retained
-- X4 is filtered for quality control
-- logs count retained vs removed observations
+- variables X1, X4, X6, X7 are retained, these are Quality flags applied to the wind profilers' measurements (Spectral consistency, Beam agreement, Vertical coherence, Signal-to-noise thresholds)
+- only quality-checked measurements a retained (logs count retained vs removed measurements).
   
 7.4 Parallel extraction
 Files are split into batches and computed with foreach/doParallel.
@@ -231,10 +230,16 @@ For each period (hourly/daily/monthly/yearly) and station:
 - Long-format conversion
 - Creation of NetCDF variables (values, timestamps, heights)
 - Addition of metadata and CF-compliant attributes
-  
+
+An example of the daily wind data obtained with this data processing scheme is shown below:
+
+<img width="627" height="555" alt="Screenshot 2025-11-27 alle 13 01 47" src="https://github.com/user-attachments/assets/f0aa42bb-3dcf-416f-a558-c8489207b10a" />
+
+Figure 3: Daily Average Wind Direction Before vs. After QC – Station WMO 01018.
+
+
 7.9 ADDITIONAL RECOMMENDATIONS
-- Keep metadata Excel file updated to avoid missing attributes in NetCDF.
-- Ensure date formats are consistent.
+- 
 
 ---
 ## 8. Automatic Tests
