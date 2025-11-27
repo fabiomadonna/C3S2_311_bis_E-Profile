@@ -179,14 +179,17 @@ To access E-Profile data from the CEDA Archive, an OAuth token is required. The 
    curl -X POST https://auth.ceda.ac.uk/oauth2/token \
         -d "grant_type=client_credentials" \
         -u "CLIENT_ID:CLIENT_SECRET"
-
+---
 The response contains your access_token
+---
 {
   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "Bearer",
   "expires_in": 3600
 }
+---
 Alternatively, use Python:
+---
 import requests
 
 client_id = "YOUR_CLIENT_ID"
@@ -201,7 +204,7 @@ token = response.json()["access_token"]
 print(token)
 
 ---
-
+###
 **Process data with R script**
 source("eprofile.R")
 Outputs (aggregated CSVs and NetCDF) will be saved in output/.
