@@ -111,11 +111,11 @@ Before running the scripts, ensure the following are installed on your system:
 - Packages can be installed from CRAN using the `install.packages()` function.
 
 **2. Bash Environment:**  
-- Bash 5+ (comes pre-installed on most Linux/macOS systems; Windows users can use Git Bash or WSL)  
+- Bash 4+ (comes pre-installed on most Linux/macOS systems; Windows users can use Git Bash or WSL)  
 - Utilities: `git`, `wget`, `curl`
 
 **3. Internet Connection:**  
-- Required to download WINPRO data via `eprofile.sh` from the CEDA repository.
+- Required to download wind profilers' data using the script `eprofile.sh` from the CEDA repository.
 
 **4. File Permissions:**  
 - Ensure read/write permissions for directories:  
@@ -161,7 +161,7 @@ This will populate Data_eprofile/ with raw CSV files.
 Certificates or external tools may be stored in external/.
 
 Process data with R script:
-source("e-profile.R")
+source("eprofile.R")
 Outputs (aggregated CSVs and NetCDF) will be saved in output/.
 
 Logs will be saved in logs/.
@@ -183,13 +183,13 @@ RAW CSV FILES
 - wind power density
 - turbulence intensity
 - wind stress
-¯ Aggregation:
-® hourly
-® daily (24-hour completeness check)
-® monthly
-® yearly
+- Aggregation:
+  ® hourly
+  ® daily (24-hour completeness check)
+  ® monthly
+  ® yearly
 ¯ Normalize time fields
-¯ NetCDF export (station × height × period)
+¯ NetCDF export (dimensions = station × height × time)
 ¯ Logs saved
 
 7.1 Package loading
@@ -233,9 +233,8 @@ For each period (hourly/daily/monthly/yearly) and station:
 - Addition of metadata and CF-compliant attributes
   
 7.9 ADDITIONAL RECOMMENDATIONS
-• Keep metadata Excel file updated to avoid missing attributes in NetCDF.
-• Prefer HPC clusters for >10 GB datasets.
-• Ensure date formats are consistent.
+- Keep metadata Excel file updated to avoid missing attributes in NetCDF.
+- Ensure date formats are consistent.
 
 ---
 ## 8. Automatic Tests
@@ -267,7 +266,7 @@ See the issue tracker for a complete list of known bugs.
 
 ### Code Documentation
 
-- Docstrings are provided for all major classes and functions (e.g., `GRUANProcessor`, `StationManager`).
+- 
 
 ---
 
