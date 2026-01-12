@@ -47,7 +47,7 @@
 ###############################################################################
 
 # Set your working directory here
-setwd("E-PROFILE")  # <-- set your path
+setwd("/data")  # <-- set your path
 
 ## RUNTIME TIMER 
 start_time <- Sys.time()
