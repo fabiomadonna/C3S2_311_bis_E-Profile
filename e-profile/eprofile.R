@@ -1,9 +1,9 @@
 ###############################################################################
 # Project: E-PROFILE Wind Profiler Data Processing script
 # File:    eprofile.R
-# Author:  Faezeh Karimian Saracks, Fabio Madonna.
-# Version: 1.1.0
-# Date:    2026-25-03
+# Author:  Fabio Madonna, Faezeh Karimian Saracks, Emanuele Tramutola
+# Version: 2.0.0
+# Date:    2026-05-07
 #
 # Description:
 #   This script implements a full end-to-end data processing pipeline for
@@ -15,7 +15,7 @@
 #     4. Stepwise filtering with detailed logging
 #     5. Multi-resolution temporal aggregation (hourly → daily → monthly → yearly)
 #     6. Integration of static metadata from external spreadsheets
-#     7. NetCDF export CF-1.8 compliant and Parquet file export CDM-OBS core compliant
+#     7. NetCDF export using CF-1.8 compliant structure
 #     8. Runtime measurement and I/O handling
 #
 # Key Features:
@@ -24,7 +24,7 @@
 #   - Yamartino wind direction standard deviation
 #   - Automated wind-energy metrics (WPD, turbulence, stress)
 #   - Compatibility with wind turbine operational ranges
-#   - Generation of station-level NetCDF and Parquet files for each temporal resolution
+#   - Generation of station-level NetCDF files for each temporal resolution
 #
 # Requirements:
 #   R >= 4.2.0
@@ -37,15 +37,14 @@
 #   - Run the script from start to end for a complete pipeline execution.
 #
 # Notes:
-#   - All time variables are normalized to UTC and in CF format with TZ.
-#   - Output files include filtering logs, combined datasets, NetCDF and Parquet files
+#   - All time variables are normalized to UTC.
+#   - NetCDF time units follow CF conventions and vary by aggregation level.
+#   - Output files include filtering logs, combined datasets, and NetCDF products.
 #
 # Disclaimer:
 #   This script is provided "as is". Adapt it as needed for your workflow.
 #
 ###############################################################################
-
-
 
 # Set your working directory here
 setwd("/data")  # <-- set your path
@@ -57,7 +56,7 @@ start_cpu  <- proc.time()
 # Packages
 required_packages <- c(
   "readr","dplyr","parallel","lubridate","foreach","doParallel",
-  "fasttime","data.table","readxl","magrittr","ncdf4","zoo","writexl","progress"
+  "fasttime","data.table","readxl","magrittr","ncdf4","zoo","writexl","progress", "arrow"
 )
 for (pkg in required_packages) {
   if (!require(pkg, character.only = TRUE)) {
@@ -69,58 +68,80 @@ for (pkg in required_packages) {
   }
 }
 
+# --- SET YEAR HERE ---
+# Collect command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+
+# Check if the year was provided
+if (length(args) == 0) {
+  stop("Error: No year provided. Usage: Rscript eprofile27042026.R 2009", call. = FALSE)
+}
+
+# Assign the first argument to a variable
+year_val <- args[1]
+
+# Example usage in your code:
+print(paste("Processing year:", year_val))
+
 # USER PATHS (set your paths)
-data_dir           <- "/data/winpro/"       # <-- set your path for input/output CSVs
-output_file_prefix <- "testttttt_complete"  # output file prefix
-log_dir            <- "/data/winpro"                # <-- set your path for logs
-nc_out_dir         <- "/data/winpro"       # <-- set your path for NetCDF output
+data_dir           <- paste0("/data/winpro/", year_val, "/")  # Diventa /data/winpro/2010/
+output_file_prefix <- paste0("testttttt_complete_", year_val)
+log_dir            <- file.path("/data/winpro", year_val, "logs")
+nc_out_dir         <- file.path("/data/winpro", year_val)
+
+# Creazione cartelle
 dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(nc_out_dir, recursive = TRUE, showWarnings = FALSE)
 
 # 1) METADATA EXTRACTION 
 extract_all_metadata <- function(file) {
-  df <- readr::read_csv(file, col_names = FALSE, show_col_types = FALSE)
+
+  # Legge il file come testo (molto più veloce)
+  lines <- readLines(file, warn = FALSE)
+
+  metadata_list <- list()
   
-  metadata_df <- data.frame(
-    observation_station = character(),
-    date_valid = character(),
-    location_latitude = numeric(),
-    location_longitude = numeric(),
-    height = numeric(),
-    station_type = numeric(),
-    type_of_measuring_equipment = numeric(),
-    type_of_antenna = numeric(),
-    mean_speed_estimation = numeric(),
-    wind_computation_enhancement = numeric(),
-    stringsAsFactors = FALSE
-  )
-  
-  start_rows <- which(df[, 1] == "Conventions")
-  end_rows   <- which(df[, 1] == "number_of_levels")
-  
+  start_rows <- grep("^Conventions", lines)
+  end_rows   <- grep("^number_of_levels", lines)
+
+  if (length(start_rows) == 0) return(data.frame())
+
   for (i in seq_along(start_rows)) {
+
     start_row <- start_rows[i]
-    end_row   <- ifelse(i < length(end_rows), end_rows[i], nrow(df))
-    metadata  <- df[start_row:end_row, ]
-    
-    observation_station <- metadata[metadata[, 1] == "observation_station", 3] %>% unique()
-    if (length(observation_station) == 1) {
-      metadata_df <- rbind(metadata_df, data.frame(
-        observation_station          = as.character(observation_station),
-        date_valid                   = as.character(metadata[metadata[, 1] == "date_valid", 3]),
-        location_latitude            = as.numeric(metadata[metadata[, 1] == "location", 3]),
-        location_longitude           = as.numeric(metadata[metadata[, 1] == "location", 4]),
-        height                       = as.numeric(metadata[metadata[, 1] == "height", 3]),
-        station_type                 = as.numeric(metadata[metadata[, 1] == "station_type", 4]),
-        type_of_measuring_equipment  = as.numeric(metadata[metadata[, 1] == "type_of_measuring_equipment", 4]),
-        type_of_antenna              = as.numeric(metadata[metadata[, 1] == "type_of_antenna", 4]),
-        mean_speed_estimation        = as.numeric(metadata[metadata[, 1] == "mean_speed_estimation", 4]),
-        wind_computation_enhancement = as.numeric(metadata[metadata[, 1] == "wind_computation_enhancement", 4]),
+    end_row   <- ifelse(i <= length(end_rows), end_rows[i], length(lines))
+
+    block <- lines[start_row:end_row]
+
+    # Estrazione campi con grep (zero parsing pesante)
+    get_val <- function(pattern, col = 3) {
+      row <- grep(paste0("^", pattern), block, value = TRUE)
+      if (length(row) == 0) return(NA)
+      parts <- strsplit(row[1], ",")[[1]]
+      if (length(parts) >= col) return(parts[col])
+      return(NA)
+    }
+
+    station <- get_val("observation_station", 3)
+
+    if (!is.na(station)) {
+      metadata_list[[length(metadata_list) + 1]] <- data.frame(
+        observation_station          = station,
+        date_valid                   = get_val("date_valid", 3),
+        location_latitude            = as.numeric(get_val("location", 3)),
+        location_longitude           = as.numeric(get_val("location", 4)),
+        height                       = as.numeric(get_val("height", 3)),
+        station_type                 = as.numeric(get_val("station_type", 4)),
+        type_of_measuring_equipment  = as.numeric(get_val("type_of_measuring_equipment", 4)),
+        type_of_antenna              = as.numeric(get_val("type_of_antenna", 4)),
+        mean_speed_estimation        = as.numeric(get_val("mean_speed_estimation", 4)),
+        wind_computation_enhancement = as.numeric(get_val("wind_computation_enhancement", 4)),
         stringsAsFactors = FALSE
-      ))
+      )
     }
   }
-  metadata_df
+
+  do.call(rbind, metadata_list)
 }
 
 run_metadata_extraction <- function(csv_files) {
@@ -138,6 +159,8 @@ run_metadata_extraction <- function(csv_files) {
     dplyr::select(id, dplyr::everything())
   metadata_df
 }
+
+
 
 #  2) FILE PROCESSING 
 process_file <- function(file) {
@@ -192,49 +215,71 @@ process_file <- function(file) {
   )
 }
 
-#  3) PARALLEL EXTRACTION (con progress bar)
+#  3) PARALLEL EXTRACTION (STABILE – senza progress bar nel parallelo)
 run_data_extraction <- function(csv_files) {
-  library(doParallel); library(foreach); library(data.table); library(progress)
-  ncores  <- min(64, parallel::detectCores()-1)
-  
-  registerDoParallel(ncores); on.exit(stopImplicitCluster(), add = TRUE)
-  message(sprintf("⏳ Processing %d files using %d cores ...", length(csv_files), ncores))
-  
-  # Progress bar
-  pb <- txtProgressBar(min = 0, max = length(csv_files), style = 3)
-  
+
+  library(doParallel)
+  library(foreach)
+  library(data.table)
+
+  ncores <- min(64, parallel::detectCores() - 1)
+  registerDoParallel(ncores)
+  on.exit(stopImplicitCluster(), add = TRUE)
+
+  message(sprintf(
+    "⏳ Processing %d files using %d cores ...",
+    length(csv_files), ncores
+  ))
+
+  # Spezzatura file in chunk (uno per core)
   nchunks <- ncores
-  chunked <- split(csv_files, ceiling(seq_along(csv_files) / ceiling(length(csv_files) / nchunks)))
-  
-  res_list <- foreach(batch = chunked,
-                      .packages = c("data.table"),
-                      .export   = c("process_file"),
-                      .errorhandling = "pass") %dopar% {
-                        outs <- lapply(batch, function(f) {
-                          res <- tryCatch(process_file(f), error = function(e) list(data=data.table(), log=data.table()))
-                          length(res$data) # per progress
-                          res
-                        })
-                        list(
-                          data = data.table::rbindlist(lapply(outs, `[[`, "data"), use.names = TRUE, fill = TRUE),
-                          log  = data.table::rbindlist(lapply(outs, `[[`, "log" ), use.names = TRUE, fill = TRUE)
-                        )
-                      }
-  
-  # Aggiorna progress bar alla fine
-  setTxtProgressBar(pb, length(csv_files))
-  close(pb)
-  
+  chunked <- split(
+    csv_files,
+    ceiling(seq_along(csv_files) /
+              ceiling(length(csv_files) / nchunks))
+  )
+
+  # PARALLELO SENZA SIDE‑EFFECT
+  res_list <- foreach(
+    batch = chunked,
+    .packages = "data.table",
+    .export   = "process_file",
+    .errorhandling = "pass"
+  ) %dopar% {
+
+    outs <- lapply(batch, function(f) {
+      tryCatch(
+        process_file(f),
+        error = function(e) list(data = data.table(), log = data.table())
+      )
+    })
+
+    list(
+      data = data.table::rbindlist(lapply(outs, `[[`, "data"),
+                                   use.names = TRUE, fill = TRUE),
+      log  = data.table::rbindlist(lapply(outs, `[[`, "log"),
+                                   use.names = TRUE, fill = TRUE)
+    )
+  }
+
   message("✅ Parallel extraction complete. Combining results...")
-  combined_data <- data.table::rbindlist(lapply(res_list, `[[`, "data"), use.names = TRUE, fill = TRUE)
-  combined_log  <- data.table::rbindlist(lapply(res_list, `[[`, "log" ), use.names = TRUE, fill = TRUE)
-  
+
+  combined_data <- data.table::rbindlist(
+    lapply(res_list, `[[`, "data"),
+    use.names = TRUE, fill = TRUE
+  )
+
+  combined_log <- data.table::rbindlist(
+    lapply(res_list, `[[`, "log"),
+    use.names = TRUE, fill = TRUE
+  )
+
   combined_data <- combined_data %>%
     dplyr::distinct(station, Date_valid, X1, .keep_all = TRUE) %>%
     dplyr::arrange(station, fasttime::fastPOSIXct(Date_valid))
-  
+
   fwrite(combined_log, file.path(data_dir, "filter_log_X4_check.csv"))
-  
+
   data.table::as.data.table(combined_data)
 }
 
@@ -402,12 +447,28 @@ filter_log <- data.table::rbindlist(log_steps, use.names = TRUE, fill = TRUE)
 data.table::fwrite(filter_log, file.path(log_dir, paste0(output_file_prefix, "filtering_log.csv")))
 cat("✅ Filtering log saved to:", file.path(log_dir, paste0(output_file_prefix, "filtering_log.csv")), "\n")
 
-#  8) METADATA LOAD 
-static_metadata <- data.table::fread("FinalCheck_datevalid_distinct_merged_metadata.csv", header = TRUE)
-static_metadata[, observation_station := trimws(observation_station)]
+# ============================================================
+#  8) METADATA LOAD (DA CSV OTTIMIZZATO)
+# ============================================================
 
-# ✅ garantisce UN solo valore per stazione (global attributes)
-static_metadata <- static_metadata[
+message("📡 Extracting metadata from CSV files...")
+
+# lista file
+csv_files <- list.files(
+  data_dir,
+  pattern = "\\.csv$",
+  full.names = TRUE
+)
+
+# estrazione metadata (usa la funzione veloce che hai appena aggiornato)
+metadata_raw <- run_metadata_extraction(csv_files)
+
+# ------------------------------------------------------------
+# PULIZIA + UN SOLO RECORD PER STAZIONE
+# ------------------------------------------------------------
+metadata_raw <- data.table::as.data.table(metadata_raw)
+
+static_metadata <- metadata_raw[
   , .(
     location_latitude  = unique(na.omit(location_latitude))[1],
     location_longitude = unique(na.omit(location_longitude))[1],
@@ -415,6 +476,33 @@ static_metadata <- static_metadata[
   ),
   by = observation_station
 ]
+# pulizia nomi stazione
+static_metadata[, observation_station := trimws(observation_station)]
+
+# ------------------------------------------------------------
+# CHECK QUALITÀ
+# ------------------------------------------------------------
+missing_lat <- sum(is.na(static_metadata$location_latitude))
+missing_lon <- sum(is.na(static_metadata$location_longitude))
+
+if (missing_lat > 0 || missing_lon > 0) {
+  warning(paste0("⚠ Missing coordinates: lat=", missing_lat, " lon=", missing_lon))
+}
+
+message("✅ Metadata ready: ", nrow(static_metadata), " stations")
+
+# ------------------------------------------------------------
+# CHECK QUALITÀ (consigliato)
+# ------------------------------------------------------------
+if (any(is.na(static_metadata$location_latitude))) {
+  warning("⚠ Missing latitude detected in some stations")
+}
+
+if (any(is.na(static_metadata$location_longitude))) {
+  warning("⚠ Missing longitude detected in some stations")
+}
+
+message("✅ Metadata extraction completed. Stations found: ", nrow(static_metadata))
 
 #  9) AGGREGATION (con progress bar)
 add_report_id <- function(df) {
@@ -585,10 +673,10 @@ units_map <- list(
   min_wind_speed       = 731,
   sd_wind_speed        = 731,
   avg_wind_direction   = 110,  # degree
-  sd_wind_direction    = 7,    # stdev → value_significance 7
+  sd_wind_direction    = 110,    # stdev 
   wind_run             = 130,  # W/m2
-  avg_wpd              = 1,    # m/s
-  turbulence_intensity = 110,  # degree
+  avg_wpd              = 120,    # m/s
+  turbulence_intensity = 1,  # adimensional
   wind_stress          = 32    # Pa
 )
 
@@ -676,7 +764,7 @@ create_ncdf <- function(df, output_file, meta, time_units, aggregation_level) {
     ncvar_def("observed_variable", "1", list(dim_index), prec="single"),
     ncvar_def("z_coordinate", "m", list(dim_index), prec="single"),
     ncvar_def("z_coordinate_type", "1", list(dim_index), prec="short"),
-    ncvar_def("report_timestamp", "seconds since 1970-01-01 00:00:00", list(dim_index), prec="double"),
+    ncvar_def("report_timestamp", "hours since 1970-01-01 00:00:00", list(dim_index), prec="double"),
     ncvar_def("observation_id", "1", list(dim_index), prec="integer"),
     ncvar_def("report_id", "1", list(dim_index), prec="integer"),
     ncvar_def("report_duration", "1", list(dim_index), prec="integer"),
@@ -693,7 +781,7 @@ create_ncdf <- function(df, output_file, meta, time_units, aggregation_level) {
 	df_long[, report_duration := report_duration_map[[as.character(aggregation_level)]]]
 
 	if (is.null(df_long$report_duration)) {
- 	 stop(paste("Invalid aggregation_level:", aggregation_level))
+	 stop(paste("Invalid aggregation_level:", aggregation_level))
 	}
 
 	df_long[, value_significance := as.integer(unlist(value_significance_map[variable]))]
@@ -719,61 +807,64 @@ create_ncdf <- function(df, output_file, meta, time_units, aggregation_level) {
   ncdf4::ncatt_put(nc,0,"institution","University of Salerno")
   ncdf4::ncatt_put(nc,0,"source","Wind profilers")
   ncdf4::ncatt_put(nc,0,"primary_id", station_id)
-
 # --------------------------------------------------
-# 14) Write parquet files
+# 14) Write parquet files (INTEGRATED FIX + TIMESTAMP METADATA BUGFIX)
 # --------------------------------------------------
 
-lat  <- meta$location_latitude[1]
-lon  <- meta$location_longitude[1]
-hgt  <- meta$height[1]
-
+# Recupero coordinate
+lat <- meta$location_latitude[1]
+lon <- meta$location_longitude[1]
 if (is.na(lat)) lat <- NA_real_
 if (is.na(lon)) lon <- NA_real_
-if (is.na(hgt)) hgt <- NA_real_
 
-# CONVERTI report_timestamp da ore dal 1970-01-01 a POSIXct UTC
-df_long[, report_timestamp := as.POSIXct(report_timestamp * 3600, origin = "1970-01-01", tz = "UTC")]
-
-df_long[, latitude  := lat]
-df_long[, longitude := lon]
-df_long[, height_station := hgt]
-df_long[, primary_station_id := Station]
-df_long[, observing_programme := 27L]
-df_long[, report_meaning_of_time_stamp := 3L]
-df_long[, data_policy_licence := 5L]
-df_long[, quality_flag := 0L]
-
+# 1. Creazione del data.table con tipi di dato CDSOBS-compliant
 df_parquet <- df_long[, .(
-  primary_station_id = Station,
-  Height,
-  latitude,
-  longitude,
-  height_of_station_above_sea_level = height_station,
-  observation_value,
-  observed_variable,
-  z_coordinate,
-  z_coordinate_type,
-  report_timestamp,
-  observation_id,
-  report_id,
-  report_duration,
-  value_significance,
-  units,
-  observing_programme,
-  report_meaning_of_time_stamp,
-  data_policy_licence,
-  quality_flag
+  primary_station_id          = as.character(Station),
+  "latitude|station_configuration" = as.numeric(lat), 
+  "longitude|station_configuration" = as.numeric(lon), 
+  observation_value           = as.numeric(observation_value),
+  observed_variable           = as.integer(observed_variable),
+  z_coordinate                = as.numeric(z_coordinate),
+  z_coordinate_type           = as.integer(z_coordinate_type),
+  # Trasformiamo in POSIXct esplicitamente
+  report_timestamp            = as.POSIXct(report_timestamp * 3600, origin = "1970-01-01", tz = "UTC"),
+  observation_id              = as.character(observation_id),
+  report_id                   = as.character(report_id),
+  report_duration             = as.integer(report_duration),
+  value_significance          = as.integer(value_significance),
+  units                       = as.integer(units),
+  observing_programme         = "27",
+  report_meaning_of_timestamp = 3L,
+  data_policy_licence         = 5L,
+  quality_flag                = 0L
 )]
 
-  parquet_file <- sub("\\.nc$", ".parquet", output_file)
-  arrow::write_parquet(df_parquet, parquet_file)
+# 2. Applicazione filtri NA (CDSOBS requirement)
+# Nota: usa i nomi mappati nel punto 1 (es. latitude|station_configuration)
+df_parquet <- df_parquet[
+  !is.na(`latitude|station_configuration`) & 
+  !is.na(`longitude|station_configuration`) & 
+  !is.na(observed_variable) & 
+  !is.na(report_timestamp)
+]
 
-  nc_close(nc)
-  message("Saved NetCDF: ", output_file)
-  message("Saved Parquet: ", parquet_file)
+# 3. FIX PER IL BUG DEI METADATI (MaxValue/MinValue 1970)
+# Usiamo arrow::write_parquet con opzioni specifiche per evitare il bug di nanoparquet
+parquet_file <- sub("\\.nc$", ".parquet", output_file)
+
+arrow::write_parquet(
+  df_parquet, 
+  parquet_file,
+  # Queste opzioni forzano i metadati corretti per i timestamp
+  use_deprecated_int96_timestamps = FALSE, 
+  version = "2.6", # Versione più recente che gestisce meglio i LogicalTypes
+  compression = "snappy"
+)
+
+nc_close(nc)
+message("Saved NetCDF: ", output_file)
+message("Saved Parquet (Fixed Metadata): ", parquet_file)
 }
-
 #  15) WRITE NetCDF per STATION & LEVEL 
 output_prefix <- file.path(nc_out_dir, "wind_")
 
@@ -797,7 +888,7 @@ for (level in names(aggregated_data_list)) {
     safe    <- gsub(" ","_", stn)
     outfile <- sprintf("%s%s_%s.nc", output_prefix, level, safe)
 
-    
+    # ✅ FIX QUI: aggiunto 'level'
     create_ncdf(
       df_stn,
       outfile,
@@ -808,9 +899,79 @@ for (level in names(aggregated_data_list)) {
   }
 }
 
-#  END FILE 
+# ==============================================================================
+# 16) MERGE AND FORMAT PARQUET FILES BY YEAR (FORCED SCHEMA VIA CASTING)
+# ==============================================================================
 
-##  PRINT TOTAL RUNTIME 
+agg_levels <- c("hourly", "daily", "monthly", "yearly")
+
+for (lvl in agg_levels) {
+
+  parquet_files <- list.files(
+    nc_out_dir,
+    pattern = sprintf("wind_%s_.*\\.parquet$", lvl),
+    full.names = TRUE
+  )
+
+  if (!length(parquet_files)) next
+
+  message("Processing level: ", lvl)
+
+  dt_list <- lapply(parquet_files, function(f) {
+
+    df <- arrow::read_parquet(
+      f,
+      col_select = c(
+        "primary_station_id",
+        "latitude|station_configuration",
+        "longitude|station_configuration",
+        "observation_value",
+        "observed_variable",
+        "z_coordinate",
+        "z_coordinate_type",
+        "report_timestamp",
+        "observation_id",
+        "report_id",
+        "report_duration",
+        "value_significance",
+        "units",
+        "observing_programme",
+        "report_meaning_of_timestamp",
+        "data_policy_licence",
+        "quality_flag"
+      )
+    )
+
+    data.table::as.data.table(df)
+  })
+
+  dt_year <- data.table::rbindlist(
+    dt_list,
+    use.names = TRUE,
+    fill = TRUE
+  )
+
+  final_file <- file.path(
+    nc_out_dir,
+    sprintf("ALL_STATIONS_wind_%s.parquet", lvl)
+  )
+
+  arrow::write_parquet(
+    dt_year,
+    final_file,
+    version = "2.6",
+    compression = "snappy",
+    use_deprecated_int96_timestamps = FALSE
+  )
+
+  rm(dt_list, dt_year)
+  gc()
+
+  message("  Saved: ", final_file)
+}
+# END FILE
+
+## PRINT TOTAL RUNTIME
 end_time <- Sys.time()
 end_cpu  <- proc.time()
 
